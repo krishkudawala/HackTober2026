@@ -141,8 +141,8 @@ async def analyze_communication(
                 return result
             fallback_reason = llm.last_error or f"AI provider '{llm.provider}' returned no output."
         except Exception as e:
-            fallback_reason = f"Provider exception: {type(e).__name__} - {str(e)}"
-            logger.warning(f"AI provider failed ({fallback_reason}), engaging rules fallback.")
+            fallback_reason = f"Provider exception: {type(e).__name__}"
+            logger.warning("AI provider failed (%s), engaging rules fallback.", fallback_reason)
     else:
         if llm.provider != "fallback":
             fallback_reason = llm.last_error or f"AI provider '{llm.provider}' is unavailable."
