@@ -47,3 +47,9 @@ htmlcov/
 *.swo
 .DS_Store
 Thumbs.db
+
+# Local SQLite databases & data directory (B05)
+data/
+*.db
+*.sqlite
+*.sqlite3

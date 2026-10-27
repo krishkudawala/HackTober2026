@@ -28,7 +28,7 @@ backend/
 │   ├── services/
 │   │   ├── __init__.py       # Services package exports
 │   │   ├── stt_service.py    # Speech-to-Text service abstraction with demo mode (B03)
-│   │   ├── scan_store.py     # In-memory persistence for scans, reports & stats (B04)
+│   │   ├── scan_store.py     # Durable SQLite persistence for scans, reports & stats (B05)
 │   │   └── demo_scenarios.py # Preset evaluation scenarios (B04)
 │   └── core/
 │       ├── __init__.py       # Core package definition
@@ -38,7 +38,8 @@ backend/
 │   ├── test_health.py        # Health and root endpoint verification
 │   ├── test_analysis.py      # Message contract, scoring, and multilingual tests (B02)
 │   ├── test_transcript_audio.py # Call transcript and audio upload tests (B03)
-│   └── test_scans_reports_stats.py # Scan history, reports, stats, and demo runner tests (B04)
+│   ├── test_scans_reports_stats.py # Scan history, reports, stats, and demo runner tests (B04)
+│   └── test_durable_storage.py # Durable SQLite persistence & threshold tests (B05)
 ├── requirements.txt          # Python dependencies
 ├── .env.example              # Environment variables template
 └── README.md                 # Backend documentation
@@ -70,6 +71,7 @@ cp .env.example .env
 ```
 
 Key environment options in `.env`:
+- `DATABASE_PATH`: Relative path to local SQLite database file (default: `data/kavachx.db`).
 - `AI_PROVIDER`: `fallback` (default rules-only), `litert` (Gemma 4 E4B Instruct via LiteRT-LM), or `ollama`.
 - `LITERT_MODEL_PATH`: Optional path to local `.litertlm` model file.
 - `OLLAMA_BASE_URL`: Base URL for local Ollama service (default: `http://localhost:11434`).
@@ -296,11 +298,17 @@ curl -X POST "http://127.0.0.1:8000/api/demo/run/demo_digital_arrest"
 
 ## 🔒 Storage Architecture & Privacy Policies
 
-1. **In-Memory Storage:**
-   The backend uses a clean service repository (`ScanStore`) retaining data for the lifetime of the backend process. This avoids paid cloud services, external database requirements, or heavy dependencies.
-2. **Data Minimization & Privacy:**
-   - Summary scan records contain only metadata (`id`, `scam_type`, `risk_score`, `risk_level`, `input_type`, `summary`, `created_at`).
-   - Submitted message bodies, call transcripts, audio binaries, and user report descriptions are never written to disk logs or public monitoring feeds.
+1. **Durable Local SQLite Persistence (B05):**
+   - Persistence is managed behind a clean repository/service boundary (`ScanStore`) using Python's standard library `sqlite3` without external cloud database or paid service dependencies.
+   - The database file location is configurable via the `DATABASE_PATH` environment variable and defaults to the repository-relative path `data/kavachx.db`.
+   - The storage directory and database tables (`scans`, `reports`) along with query indexes are automatically created during application startup (`lifespan`), ensuring that a missing initial database never prevents app startup or operational health checks (`GET /health`).
+   - Foreign key integrity is enforced so incident reports must reference an existing scan record (`ON DELETE CASCADE`).
+   - Analysis records retain 100% schema fidelity (including `red_flags`, `score_breakdown`, `evidence`, `signals`, `verdict`, and provider metadata) via serialized JSON payloads.
+
+2. **Persistence Limitations & Security Responsibilities:**
+   - **Local Storage:** Full scan records (including submitted text, transcripts, and analysis outcomes) and incident report details are persisted locally in the configured SQLite database file.
+   - **Unencrypted Database:** The local database file is **not encrypted** by the backend application layer. It is the responsibility of the host deployment environment (OS file permissions, disk encryption, container isolation) to protect the database file from unauthorized physical or filesystem access.
+   - **Privacy & Logging:** Operational log streams never include submitted message texts, transcripts, audio payloads, or incident report descriptions. Logs record only record IDs, scam types, and bounded risk scores.
 
 ---
 

@@ -32,6 +32,9 @@ class Settings:
     STT_PROVIDER: str = os.getenv("STT_PROVIDER", "demo")
     MAX_AUDIO_UPLOAD_BYTES: int = int(os.getenv("MAX_AUDIO_UPLOAD_BYTES", 25 * 1024 * 1024))  # 25 MB default
 
+    # Database Persistence Configuration (B05)
+    DATABASE_PATH: str = os.getenv("DATABASE_PATH", "data/kavachx.db")
+
 
     # CORS Origins: comma-separated list of origins or "*"
     _raw_cors_origins: str = os.getenv("CORS_ORIGINS", "*")

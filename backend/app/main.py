@@ -32,6 +32,17 @@ async def lifespan(app: FastAPI):
     logger.info(f"  Environment: {settings.ENVIRONMENT}")
     logger.info("  AI Model Loading: Deferred (No models loaded at startup)")
     logger.info("=" * 60)
+
+    # Initialize durable database persistence safely during startup (B05)
+    try:
+        from app.services.scan_store import get_scan_store
+        await get_scan_store().initialize()
+    except Exception as exc:
+        logger.warning(
+            "Database initialization failed during startup: %s. Operational health check remains available.",
+            type(exc).__name__,
+        )
+
     yield
     logger.info(f"  {settings.APP_NAME} — Backend Shutting Down")
 
