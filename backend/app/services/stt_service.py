@@ -50,10 +50,10 @@ class SpeechToTextService:
         try:
             return await self._transcribe_configured_provider(audio_data, filename, language)
         except Exception as e:
-            logger.error(f"STT transcription failed with provider '{self.provider}': {e}")
+            logger.error("STT transcription failed with provider '%s': %s", self.provider, type(e).__name__)
             return {
                 "status": "error",
-                "message": f"Audio transcription failed: {str(e)}",
+                "message": "Audio transcription failed.",
                 "provider": self.provider,
                 "transcript": "",
                 "is_demo": False,

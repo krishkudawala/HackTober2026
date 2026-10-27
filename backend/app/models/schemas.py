@@ -103,11 +103,11 @@ class AnalyzeTranscriptRequest(BaseModel):
 
 class ReportRequest(BaseModel):
     """Request schema to record an incident report."""
-    scan_id: str = Field(..., min_length=1, description="ID of the related scan")
-    scam_type: str = Field(..., min_length=1, description="Type of scam")
+    scan_id: str = Field(..., min_length=1, max_length=128, description="ID of the related scan")
+    scam_type: str = Field(..., min_length=1, max_length=128, description="Type of scam")
     risk_score: int = Field(..., ge=0, le=100, description="Risk score from analysis (0-100)")
-    description: Optional[str] = Field(default=None, description="User description of the incident")
-    communication_source: Optional[str] = Field(default=None, description="Where the communication came from")
+    description: Optional[str] = Field(default=None, max_length=5000, description="User description of the incident")
+    communication_source: Optional[str] = Field(default=None, max_length=128, description="Where the communication came from")
 
 
 # ── Response Component Models ──

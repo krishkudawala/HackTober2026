@@ -30,7 +30,13 @@ class ScanStore:
     """
 
     def __init__(self, db_path: Optional[str] = None):
-        self.db_path = db_path if db_path is not None else settings.DATABASE_PATH
+        raw_path = db_path if db_path is not None else settings.DATABASE_PATH
+        if raw_path != ":memory:":
+            if "\x00" in raw_path:
+                raise ValueError("Database path contains null bytes.")
+            self.db_path = os.path.normpath(raw_path)
+        else:
+            self.db_path = ":memory:"
         self._initialized = False
 
     def _ensure_dir(self) -> None:

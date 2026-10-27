@@ -32,14 +32,16 @@ backend/
 │   │   └── demo_scenarios.py # Preset evaluation scenarios (B04)
 │   └── core/
 │       ├── __init__.py       # Core package definition
-│       └── config.py         # Application settings & environment configuration
+│       ├── config.py         # Application settings, startup validation & CORS (B06)
+│       └── security.py       # API key authentication & access control (B06)
 ├── tests/
 │   ├── __init__.py           # Tests package definition
 │   ├── test_health.py        # Health and root endpoint verification
 │   ├── test_analysis.py      # Message contract, scoring, and multilingual tests (B02)
 │   ├── test_transcript_audio.py # Call transcript and audio upload tests (B03)
 │   ├── test_scans_reports_stats.py # Scan history, reports, stats, and demo runner tests (B04)
-│   └── test_durable_storage.py # Durable SQLite persistence & threshold tests (B05)
+│   ├── test_durable_storage.py # Durable SQLite persistence & threshold tests (B05)
+│   └── test_security_hardening.py # Production config, CORS, uploads, auth & errors (B06)
 ├── requirements.txt          # Python dependencies
 ├── .env.example              # Environment variables template
 └── README.md                 # Backend documentation
@@ -71,6 +73,10 @@ cp .env.example .env
 ```
 
 Key environment options in `.env`:
+- `ENVIRONMENT`: `development` (permissive dev settings, default) or `production` (enforces strict CORS and security rules).
+- `CORS_ORIGINS`: Comma-separated list of allowed origins or `*` (rejected in production if credentials are enabled).
+- `CORS_ALLOW_CREDENTIALS`: `true` (default) or `false`.
+- `API_KEY`: Optional server-to-server API key for protected endpoints. Unset by default (open for local development).
 - `DATABASE_PATH`: Relative path to local SQLite database file (default: `data/kavachx.db`).
 - `AI_PROVIDER`: `fallback` (default rules-only), `litert` (Gemma 4 E4B Instruct via LiteRT-LM), or `ollama`.
 - `LITERT_MODEL_PATH`: Optional path to local `.litertlm` model file.
@@ -309,6 +315,13 @@ curl -X POST "http://127.0.0.1:8000/api/demo/run/demo_digital_arrest"
    - **Local Storage:** Full scan records (including submitted text, transcripts, and analysis outcomes) and incident report details are persisted locally in the configured SQLite database file.
    - **Unencrypted Database:** The local database file is **not encrypted** by the backend application layer. It is the responsibility of the host deployment environment (OS file permissions, disk encryption, container isolation) to protect the database file from unauthorized physical or filesystem access.
    - **Privacy & Logging:** Operational log streams never include submitted message texts, transcripts, audio payloads, or incident report descriptions. Logs record only record IDs, scam types, and bounded risk scores.
+
+3. **Security & Operational Hardening (B06):**
+   - **Startup Configuration Validation:** Validates environment, port, upload size, and provider configurations on startup. Fails fast with descriptive errors without leaking secrets.
+   - **CORS Policies:** In production (`ENVIRONMENT=production`), wildcard origins (`*`) are strictly rejected when credentials are enabled (`CORS_ALLOW_CREDENTIALS=true`). Allowed HTTP methods and headers are constrained intentionally.
+   - **Server-to-Server API Key:** The optional `API_KEY` setting enables private server-to-server or gateway authentication via `X-API-Key` or `Authorization: Bearer <token>` using timing-safe comparison (`hmac.compare_digest`). Unset by default for local development. **Note:** Embedding an API key inside a client-side mobile application (e.g. Flutter APK) does *not* protect against extraction; this setting is intended for server-to-server protection only.
+   - **Request & Upload Safety:** Audio uploads are checked early against `Content-Length` headers and bounded to `MAX_AUDIO_UPLOAD_BYTES` (25MB). Dangerous executable/script file extensions (`.exe`, `.sh`, `.py`, `.bat`, etc.) and script content types are rejected with HTTP 400. Filenames are sanitized with `os.path.basename` to prevent path traversal. Audio data is processed in-memory and not written to disk.
+   - **Correlation & Error Boundaries:** Middleware attaches a unique `X-Request-ID` to all HTTP responses, alongside standard security headers (`X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy: no-referrer`, and `HSTS` in production). Unhandled exceptions return sanitized JSON responses without exposing internal server paths or stack traces.
 
 ---
 

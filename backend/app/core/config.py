@@ -1,6 +1,6 @@
 """
 Configuration management for KavachX Bharat API.
-Loads environment variables with sensible defaults.
+Loads environment variables with sensible defaults and provides startup validation.
 """
 
 import os
@@ -35,15 +35,63 @@ class Settings:
     # Database Persistence Configuration (B05)
     DATABASE_PATH: str = os.getenv("DATABASE_PATH", "data/kavachx.db")
 
+    # Security & Access Control Configuration (B06)
+    # Optional server-to-server API key (None by default: open for local dev)
+    API_KEY: Optional[str] = os.getenv("API_KEY")
 
-    # CORS Origins: comma-separated list of origins or "*"
+    # CORS Configuration
     _raw_cors_origins: str = os.getenv("CORS_ORIGINS", "*")
+    CORS_ALLOW_CREDENTIALS: bool = os.getenv("CORS_ALLOW_CREDENTIALS", "true").lower() in ("true", "1", "yes")
 
     @property
     def CORS_ORIGINS(self) -> List[str]:
         if self._raw_cors_origins == "*":
             return ["*"]
         return [origin.strip() for origin in self._raw_cors_origins.split(",") if origin.strip()]
+
+    def is_production(self) -> bool:
+        """Indicate whether the application is configured in production mode."""
+        return self.ENVIRONMENT.lower() == "production"
+
+    def validate(self) -> None:
+        """
+        Validate configuration at application startup.
+        Fails fast with clear descriptive messages without exposing secrets.
+        """
+        valid_envs = {"development", "staging", "production", "test"}
+        if self.ENVIRONMENT.lower() not in valid_envs:
+            raise ValueError(
+                f"Invalid ENVIRONMENT '{self.ENVIRONMENT}'. Expected one of: {', '.join(sorted(valid_envs))}."
+            )
+
+        if not (1 <= self.PORT <= 65535):
+            raise ValueError(f"Invalid PORT '{self.PORT}'. Must be between 1 and 65535.")
+
+        if self.MAX_AUDIO_UPLOAD_BYTES <= 0 or self.MAX_AUDIO_UPLOAD_BYTES > 100 * 1024 * 1024:
+            raise ValueError("MAX_AUDIO_UPLOAD_BYTES must be positive and not exceed 100MB.")
+
+        # In production mode: reject wildcard CORS origins when credentials are enabled
+        if self.is_production():
+            if self.CORS_ALLOW_CREDENTIALS and ("*" in self.CORS_ORIGINS or self._raw_cors_origins == "*"):
+                raise ValueError(
+                    "Production configuration error: Wildcard CORS_ORIGINS ('*') cannot be used when "
+                    "credentials are enabled (CORS_ALLOW_CREDENTIALS=true). "
+                    "Please configure explicit trusted domain origins."
+                )
+
+        # AI provider checks
+        valid_ai_providers = {"fallback", "litert", "ollama"}
+        if self.AI_PROVIDER.lower() not in valid_ai_providers:
+            raise ValueError(
+                f"Invalid AI_PROVIDER '{self.AI_PROVIDER}'. Expected one of: {', '.join(sorted(valid_ai_providers))}."
+            )
+
+        if not self.STT_PROVIDER.strip():
+            raise ValueError("STT_PROVIDER cannot be empty.")
+
+        # Validate database path does not contain null bytes
+        if "\x00" in self.DATABASE_PATH:
+            raise ValueError("DATABASE_PATH cannot contain null bytes.")
 
 
 settings = Settings()

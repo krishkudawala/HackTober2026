@@ -4,8 +4,9 @@ Exposes message, call transcript, audio analysis, scan history,
 incident reports, statistics, and demo scenario endpoints.
 """
 
+import os
 from typing import List, Optional
-from fastapi import APIRouter, UploadFile, File, Form, HTTPException, status
+from fastapi import APIRouter, UploadFile, File, Form, HTTPException, status, Request
 
 from app.models.schemas import (
     AnalyzeMessageRequest,
@@ -109,12 +110,13 @@ async def analyze_transcript(request: AnalyzeTranscriptRequest) -> AnalysisResul
     )
 )
 async def analyze_audio(
+    request: Request,
     file: UploadFile = File(..., description="Audio file to transcribe and analyze"),
     language: Optional[str] = Form(default="en", description="Optional language code (en, hi, pa, hinglish, auto)")
 ) -> AudioAnalysisResponse:
     """
     Audio analysis pipeline:
-    1. Validate upload presence and enforce size limit.
+    1. Validate upload presence, sanitize filename, and enforce size limits.
     2. Transcribe via STT service abstraction.
     3. If demo mode or error, return transparent guidance without fabricating transcripts.
     4. If transcribed, pass text through shared analysis engine with input_type='audio',
@@ -125,6 +127,50 @@ async def analyze_audio(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="No audio file was supplied."
         )
+
+    # Sanitize filename (prevent directory traversal or malicious relative paths)
+    raw_filename = file.filename.replace("\\", "/")
+    safe_filename = os.path.basename(raw_filename)
+    if not safe_filename or safe_filename in (".", ".."):
+        safe_filename = "audio_upload.wav"
+
+    # Reject dangerous executable and script file extensions
+    _, ext = os.path.splitext(safe_filename.lower())
+    DANGEROUS_EXTENSIONS = {
+        ".exe", ".bat", ".cmd", ".sh", ".py", ".js", ".html", ".htm",
+        ".php", ".vbs", ".dll", ".so", ".jar", ".ps1", ".scr", ".msi"
+    }
+    if ext in DANGEROUS_EXTENSIONS:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Disallowed file type. Executable and script uploads are rejected."
+        )
+
+    # Reject disallowed dangerous content types
+    content_type = (file.content_type or "").lower().strip()
+    DISALLOWED_CONTENT_TYPES = {
+        "text/html", "application/javascript", "application/x-msdownload",
+        "application/x-sh", "application/x-executable", "text/javascript",
+        "application/x-bat", "application/x-python"
+    }
+    if content_type in DISALLOWED_CONTENT_TYPES:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Disallowed content type for audio upload."
+        )
+
+    # Fail fast if Content-Length header exceeds limit
+    content_length = request.headers.get("content-length")
+    if content_length:
+        try:
+            if int(content_length) > settings.MAX_AUDIO_UPLOAD_BYTES:
+                max_mb = settings.MAX_AUDIO_UPLOAD_BYTES // (1024 * 1024)
+                raise HTTPException(
+                    status_code=status.HTTP_413_CONTENT_TOO_LARGE,
+                    detail=f"Audio file exceeds maximum allowed size of {max_mb}MB."
+                )
+        except ValueError:
+            pass
 
     # Read audio content and validate upload size
     audio_data = await file.read()
@@ -145,7 +191,7 @@ async def analyze_audio(
     stt = get_stt_service()
     stt_result = await stt.transcribe(
         audio_data=audio_data,
-        filename=file.filename,
+        filename=safe_filename,
         language=language or "en"
     )
 
