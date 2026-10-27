@@ -215,9 +215,12 @@ def calculate_risk_score(text: str) -> Tuple[int, RiskLevel, List[RiskScoreBreak
         text_lower
     ))
     has_active_solicitation = bool(re.search(
-        r"\b(send|submit|forward|enter|tell|reply\s+with|share)\s+(your\s+)?(otp|pin|password|cvv)\b",
+        r"\b(send|submit|forward|enter|tell|reply\s+with)\s+(your\s+)?(otp|pin|password|cvv)\b",
         text_lower
-    ))
+    )) or (
+        bool(re.search(r"\b(share|provide)\s+(your\s+)?(otp|pin|password|cvv)\b", text_lower))
+        and not has_safety_warning
+    )
 
     # 2. Check for legitimate transactional or parcel delivery updates
     is_legitimate_transaction = bool(re.search(
