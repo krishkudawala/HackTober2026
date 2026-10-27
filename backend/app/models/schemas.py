@@ -83,6 +83,24 @@ class AnalyzeMessageRequest(BaseModel):
     )
 
 
+class AnalyzeTranscriptRequest(BaseModel):
+    """Request schema for analyzing a call transcript."""
+    transcript: str = Field(
+        ...,
+        min_length=1,
+        max_length=10000,
+        description="The call transcript text to analyze (max 10000 chars)"
+    )
+    source_info: Optional[str] = Field(
+        default=None,
+        description="Optional source identifier or caller details"
+    )
+    language: Optional[str] = Field(
+        default="en",
+        description="Desired response language: en, hi, pa, hinglish, or auto"
+    )
+
+
 # ── Response Component Models ──
 
 class RedFlag(BaseModel):
@@ -140,3 +158,13 @@ class AnalysisResult(BaseModel):
         default="AI-generated risk assessment. Verify critical decisions through official channels.",
         description="Standard digital safety disclaimer"
     )
+
+
+class AudioAnalysisResponse(BaseModel):
+    """Response schema for audio file transcription and scam analysis."""
+    status: str = Field(..., description="Status of audio processing: demo_mode, success, or error")
+    message: Optional[str] = Field(default=None, description="Detailed guidance or error message")
+    provider: str = Field(default="demo", description="Speech-to-Text provider used")
+    transcript: str = Field(default="", description="Transcribed text if available")
+    analysis: Optional[AnalysisResult] = Field(default=None, description="Analysis result if transcript available")
+

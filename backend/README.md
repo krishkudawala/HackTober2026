@@ -10,10 +10,10 @@ FastAPI backend service for **KavachX Bharat** (AI-powered scam detection and di
 backend/
 ├── app/
 │   ├── __init__.py           # Application package definition
-│   ├── main.py               # FastAPI application entry point, CORS, lifespan & health
+│   ├── main.py               # FastAPI entry point, CORS, lifespan & health
 │   ├── api/
 │   │   ├── __init__.py       # Router exports
-│   │   └── routes.py         # REST endpoints (POST /api/analyze/message)
+│   │   └── routes.py         # REST endpoints (message, transcript, audio)
 │   ├── ai/
 │   │   ├── __init__.py       # AI package exports
 │   │   ├── engine.py         # Normalization, language detection & provider orchestrator
@@ -25,13 +25,17 @@ backend/
 │   ├── scoring/
 │   │   ├── __init__.py       # Scoring exports
 │   │   └── risk_engine.py    # Deterministic signal detection & 0–100 risk scoring
+│   ├── services/
+│   │   ├── __init__.py       # Services package exports
+│   │   └── stt_service.py    # Speech-to-Text service abstraction with demo mode
 │   └── core/
 │       ├── __init__.py       # Core package definition
 │       └── config.py         # Application settings & environment configuration
 ├── tests/
 │   ├── __init__.py           # Tests package definition
 │   ├── test_health.py        # Health and root endpoint verification
-│   └── test_analysis.py      # Contract, scoring, validation, and multilingual tests
+│   ├── test_analysis.py      # Message contract, scoring, and multilingual tests (B02)
+│   └── test_transcript_audio.py # Call transcript and audio upload tests (B03)
 ├── requirements.txt          # Python dependencies
 ├── .env.example              # Environment variables template
 └── README.md                 # Backend documentation
@@ -67,13 +71,15 @@ Key environment options in `.env`:
 - `LITERT_MODEL_PATH`: Optional path to local `.litertlm` model file.
 - `OLLAMA_BASE_URL`: Base URL for local Ollama service (default: `http://localhost:11434`).
 - `OLLAMA_MODEL`: Model tag for Ollama (default: `qwen2.5:1.5b`).
+- `STT_PROVIDER`: `demo` (default: transparent demo fallback, zero credentials required) or custom provider.
+- `MAX_AUDIO_UPLOAD_BYTES`: Maximum audio upload size in bytes (default: `26214400` = 25 MB).
 
 ### 4. Run the Development Server
 
 From the `backend/` directory:
 
 ```bash
-uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+python -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
 The server starts on `http://127.0.0.1:8000`.
@@ -101,7 +107,7 @@ The server starts on `http://127.0.0.1:8000`.
 ### 2. Message Analysis (Milestone B02)
 
 - **URL:** `POST /api/analyze/message`
-- **Summary:** Analyze text communication (SMS, WhatsApp, call transcript, or plain text) for fraud patterns.
+- **Summary:** Analyze text communication (SMS, WhatsApp, plain text) for fraud patterns.
 - **Content-Type:** `application/json`
 
 #### Request Schema
@@ -115,40 +121,7 @@ The server starts on `http://127.0.0.1:8000`.
 }
 ```
 
-#### Language Support
-
-| Code | Language | Script / Handling |
-|---|---|---|
-| `en` | English | Default plain-language analysis |
-| `hi` | Hindi | Devanagari script responses & safety guidance |
-| `pa` | Punjabi | Gurmukhi script & Roman Punjabi phrases |
-| `hinglish`| Hinglish | Conversational Hindi in Latin script |
-| `auto` | Auto-Detect | Inferred automatically from text script and vocabulary |
-
-#### Risk Scoring Policy & Thresholds
-
-Scores range deterministically from `0` to `100`:
-
-| Risk Score | Risk Level | Description & Action |
-|---|---|---|
-| **0 – 29** | `SAFE` | No significant fraud indicators; legitimate notifications |
-| **30 – 64** | `VERIFY` | Suspicious signals detected; requires manual verification before action |
-| **65 – 100** | `HIGH_RISK` | Severe fraud indicators (digital arrest threats, credential theft, malicious URLs) |
-
-#### Supported Scam Categories
-
-- **Phishing**: Fake banking links, verification portals, credential harvesting.
-- **Fake Bank Support**: Impersonating customer support claiming account/card blocked, demanding OTP.
-- **Digital Arrest Scam**: Impersonating police, CBI, ED, or customs threatening video arrest or warrants.
-- **UPI / Payment Scam**: Reverse PIN deception, fake collect requests, QR code cashback tricks.
-- **Investment Scam**: Unrealistic guaranteed returns, crypto trading groups, zero risk claims.
-- **Prepaid Task / Job Scam**: Upfront registration fees for rating or review tasks.
-- **Lottery / Prize Scam**: Unsolicited lottery or lucky draw winnings demanding processing fees.
-- **Government / Authority Impersonation**: Impersonating ministries, electricity bill disconnection threats.
-- **Legitimate**: Normal personal, business, delivery tracking, or standard bank transaction alerts.
-- **Unknown Scam Type**: Unclassified or novel suspicious pattern.
-
-#### Example Request (cURL)
+#### Example cURL
 
 ```bash
 curl -X POST "http://127.0.0.1:8000/api/analyze/message" \
@@ -160,88 +133,146 @@ curl -X POST "http://127.0.0.1:8000/api/analyze/message" \
      }'
 ```
 
-#### Example Successful Response
+---
+
+### 3. Call Transcript Analysis (Milestone B03)
+
+- **URL:** `POST /api/analyze/transcript`
+- **Summary:** Analyze a call transcript for digital arrest, impersonation, or coercion patterns.
+- **Content-Type:** `application/json`
+- **Pipeline:** Reuses the shared normalization, language resolution, classification, and scoring pipeline.
+- **Contract:** Returns the exact same `AnalysisResult` response contract as `POST /api/analyze/message`, setting `input_type="call_transcript"` and preserving the transcript in `input_text`.
+
+#### Request Schema
 
 ```json
 {
-  "id": "7f3b8e21-0a42-4f8b-9d1a-5b1234567890",
-  "scam_type": "Phishing",
-  "risk_score": 65,
-  "risk_level": "HIGH_RISK",
-  "confidence": 0.9,
-  "summary": "KavachX Bharat has classified this communication as a potential Phishing with a risk score of 65/100 (HIGH_RISK).",
-  "explanation": "HIGH RISK: This communication contains suspicious links designed to harvest sensitive personal or banking credentials. The URLs mimic official institutions to deceive users into submitting passwords or downloading malicious files.",
-  "red_flags": [
-    {
-      "indicator": "Suspicious URL",
-      "description": "Directs to unverified, shortened, or spoofed web link.",
-      "severity": "critical"
-    },
-    {
-      "indicator": "Credential Theft Pretext",
-      "description": "Fake portal designed to steal login credentials or banking info.",
-      "severity": "critical"
-    }
-  ],
-  "recommended_actions": [
-    "Do NOT click on unverified links or download APK files from SMS/WhatsApp.",
-    "Verify the website address carefully — scam domains mimic official brand names.",
-    "Report phishing links to cybercrime.gov.in and 1930."
-  ],
-  "detected_entities": [
-    "Confirmed Malicious URL",
-    "Bank / KYC Impersonation"
-  ],
-  "score_breakdown": [
-    {
-      "signal": "Confirmed Malicious URL",
-      "points": 40,
-      "description": "The message contains a confirmed malicious, phishing, or spoofed URL."
-    },
-    {
-      "signal": "Bank / KYC Impersonation",
-      "points": 20,
-      "description": "The message impersonates a bank or threatens account suspension regarding KYC."
-    },
-    {
-      "signal": "Generic Urgency Language",
-      "points": 5,
-      "description": "The message creates artificial urgency."
-    }
-  ],
-  "input_type": "sms",
-  "input_text": "Your SBI account will be blocked today due to pending KYC. Click http://sbi-kyc-verify.online to update immediately.",
-  "ai_provider": "fallback",
-  "verdict": "likely_scam",
-  "evidence": [
-    "Confirmed Malicious URL (40 pts): The message contains a confirmed malicious, phishing, or spoofed URL.",
-    "Bank / KYC Impersonation (20 pts): The message impersonates a bank or threatens account suspension regarding KYC."
-  ],
-  "model_name": "rule_engine",
-  "language": "en",
-  "fallback_used": true,
-  "fallback_reason": null,
-  "signals": [
-    "Confirmed Malicious URL",
-    "Bank / KYC Impersonation",
-    "Generic Urgency Language"
-  ],
-  "analysis_mode": "rules-only",
-  "analysis_complete": true,
-  "warnings": [
-    "Deterministic rule-based analysis engine used."
-  ],
-  "created_at": "2026-10-27T12:00:00.000000+00:00",
-  "disclaimer": "AI-generated risk assessment. Verify critical decisions through official channels."
+  "transcript": "Required string (1 to 10000 characters)",
+  "source_info": "Optional string (e.g. caller phone number or telecom provider)",
+  "language": "Optional string: en | hi | pa | hinglish | auto (default: en)"
 }
+```
+
+#### Example cURL
+
+```bash
+curl -X POST "http://127.0.0.1:8000/api/analyze/transcript" \
+     -H "Content-Type: application/json" \
+     -d '{
+       "transcript": "Caller: I am Senior Inspector Sharma from Mumbai Police Crime Branch. Your Aadhaar card is linked to money laundering. You are under digital arrest. Transfer Rs 50,000 to the verification account right now.",
+       "source_info": "+91-9876543210",
+       "language": "en"
+     }'
 ```
 
 ---
 
-### 3. Interactive Documentation
+### 4. Audio Upload Analysis (Milestone B03)
 
-- **Swagger UI:** `http://127.0.0.1:8000/docs`
-- **ReDoc:** `http://127.0.0.1:8000/redoc`
+- **URL:** `POST /api/analyze/audio`
+- **Summary:** Upload audio recordings (e.g. WAV, MP3, M4A) for Speech-to-Text transcription followed by scam analysis.
+- **Content-Type:** `multipart/form-data`
+- **Upload Size Limit:** 25 MB max (enforced with HTTP 413 error if exceeded).
+- **STT Provider & Demo Mode:**
+  - By default (`STT_PROVIDER=demo`), the service returns a transparent demo-mode response prompting manual transcript entry. No fake transcripts or fabricated analyses are produced.
+  - When an STT provider is configured and successfully transcribes audio, the transcript is routed through the shared analysis engine with `input_type="audio"`.
+
+#### Request Parameters (Multipart Form)
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `file` | Binary File | Yes | Audio file (WAV, MP3, M4A, etc.) up to 25 MB |
+| `language` | Form String | No | Language code hint (`en`, `hi`, `pa`, `hinglish`, `auto`; default: `en`) |
+
+#### Demo-Mode Response (`STT_PROVIDER=demo`)
+
+```json
+{
+  "status": "demo_mode",
+  "message": "Speech-to-Text is in demo mode. Please paste the call transcript manually into the transcript analysis tool or configure an STT provider.",
+  "provider": "demo",
+  "transcript": "",
+  "analysis": null
+}
+```
+
+#### Successful Transcription Response
+
+```json
+{
+  "status": "success",
+  "message": null,
+  "provider": "stt",
+  "transcript": "Caller: You are under digital arrest. Transfer money immediately.",
+  "analysis": {
+    "id": "c4b78912-3456-4abc-9def-123456789abc",
+    "scam_type": "Digital Arrest Scam",
+    "risk_score": 75,
+    "risk_level": "HIGH_RISK",
+    "confidence": 0.9,
+    "summary": "KavachX Bharat has classified this communication as a potential Digital Arrest Scam with a risk score of 75/100 (HIGH_RISK).",
+    "explanation": "HIGH RISK: This communication impersonates law-enforcement officials and threatens immediate arrest...",
+    "red_flags": [
+      {
+        "indicator": "Digital Arrest Coercion",
+        "description": "Threatens immediate arrest via video call or telephone.",
+        "severity": "critical"
+      }
+    ],
+    "recommended_actions": [
+      "No Indian law enforcement agency or court conducts arrests over telephone or video calls.",
+      "Do NOT transfer any money or disclose your bank account details.",
+      "Report the call immediately to the National Cyber Crime Helpline at 1930."
+    ],
+    "detected_entities": ["Government / Law Enforcement Impersonation", "Arrest / Legal Threat"],
+    "score_breakdown": [
+      {
+        "signal": "Government / Law Enforcement Impersonation",
+        "points": 25,
+        "description": "The message impersonates a government or law-enforcement authority."
+      },
+      {
+        "signal": "Arrest / Legal Threat",
+        "points": 25,
+        "description": "The message threatens arrest or legal prosecution to create fear."
+      }
+    ],
+    "input_type": "audio",
+    "input_text": "Caller: You are under digital arrest. Transfer money immediately.",
+    "ai_provider": "fallback",
+    "verdict": "likely_scam",
+    "evidence": ["Government / Law Enforcement Impersonation (25 pts)..."],
+    "model_name": "rule_engine",
+    "language": "en",
+    "fallback_used": true,
+    "fallback_reason": null,
+    "signals": ["Government / Law Enforcement Impersonation", "Arrest / Legal Threat"],
+    "analysis_mode": "rules-only",
+    "analysis_complete": true,
+    "warnings": ["Deterministic rule-based analysis engine used."],
+    "created_at": "2026-10-27T12:00:00.000000+00:00",
+    "disclaimer": "AI-generated risk assessment. Verify critical decisions through official channels."
+  }
+}
+```
+
+#### Example cURL
+
+```bash
+curl -X POST "http://127.0.0.1:8000/api/analyze/audio" \
+     -F "file=@call_recording.wav;type=audio/wav" \
+     -F "language=en"
+```
+
+---
+
+## 🛡️ Risk Scoring Policy & Thresholds
+
+| Risk Score | Risk Level | Description & Action |
+|---|---|---|
+| **0 – 29** | `SAFE` | No significant fraud indicators; legitimate notifications |
+| **30 – 64** | `VERIFY` | Suspicious signals detected; requires manual verification before action |
+| **65 – 100** | `HIGH_RISK` | Severe fraud indicators (digital arrest threats, credential theft, malicious URLs) |
 
 ---
 

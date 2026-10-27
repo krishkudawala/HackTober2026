@@ -28,6 +28,11 @@ class Settings:
     OLLAMA_BASE_URL: str = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
     OLLAMA_MODEL: str = os.getenv("OLLAMA_MODEL", "qwen2.5:1.5b")
 
+    # Speech-to-Text Configuration
+    STT_PROVIDER: str = os.getenv("STT_PROVIDER", "demo")
+    MAX_AUDIO_UPLOAD_BYTES: int = int(os.getenv("MAX_AUDIO_UPLOAD_BYTES", 25 * 1024 * 1024))  # 25 MB default
+
+
     # CORS Origins: comma-separated list of origins or "*"
     _raw_cors_origins: str = os.getenv("CORS_ORIGINS", "*")
 
