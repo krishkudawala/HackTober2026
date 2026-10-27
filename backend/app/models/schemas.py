@@ -101,6 +101,15 @@ class AnalyzeTranscriptRequest(BaseModel):
     )
 
 
+class ReportRequest(BaseModel):
+    """Request schema to record an incident report."""
+    scan_id: str = Field(..., min_length=1, description="ID of the related scan")
+    scam_type: str = Field(..., min_length=1, description="Type of scam")
+    risk_score: int = Field(..., ge=0, le=100, description="Risk score from analysis (0-100)")
+    description: Optional[str] = Field(default=None, description="User description of the incident")
+    communication_source: Optional[str] = Field(default=None, description="Where the communication came from")
+
+
 # ── Response Component Models ──
 
 class RedFlag(BaseModel):
@@ -167,4 +176,48 @@ class AudioAnalysisResponse(BaseModel):
     provider: str = Field(default="demo", description="Speech-to-Text provider used")
     transcript: str = Field(default="", description="Transcribed text if available")
     analysis: Optional[AnalysisResult] = Field(default=None, description="Analysis result if transcript available")
+
+
+class ScanRecord(BaseModel):
+    """Summary record for scan history view."""
+    id: str = Field(..., description="Unique scan ID")
+    scam_type: str = Field(..., description="Classified scam category")
+    risk_score: int = Field(..., ge=0, le=100, description="Risk score 0-100")
+    risk_level: RiskLevel = Field(..., description="SAFE, VERIFY, or HIGH_RISK")
+    input_type: str = Field(..., description="Type of input analyzed: sms, whatsapp, call_transcript, audio, text")
+    summary: str = Field(..., description="Brief summary of the analysis")
+    created_at: str = Field(..., description="ISO-8601 creation timestamp")
+
+
+class ReportResponse(BaseModel):
+    """Response schema after submitting an incident report."""
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()), description="Report ID")
+    status: str = Field(default="recorded", description="Status of the report")
+    message: str = Field(
+        default="Incident report recorded in KavachX Bharat backend. For immediate assistance, contact the National Cyber Crime Helpline at 1930.",
+        description="Confirmation message"
+    )
+    scan_id: str = Field(..., description="Associated scan ID")
+    created_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat(), description="ISO-8601 timestamp")
+
+
+class DashboardStats(BaseModel):
+    """Dashboard statistics derived from scan history."""
+    total_scans: int = Field(..., description="Total number of scans processed")
+    threats_detected: int = Field(..., description="Scans with risk score >= 30 (VERIFY or HIGH_RISK)")
+    high_risk_alerts: int = Field(..., description="Scans with risk score >= 65 (HIGH_RISK)")
+    critical_alerts: int = Field(..., description="Scans with severe risk score >= 80")
+    protection_status: str = Field(default="active", description="Current backend protection status")
+
+
+class DemoScenario(BaseModel):
+    """Preset demo scenario for evaluation and testing."""
+    id: str = Field(..., description="Unique scenario ID")
+    name: str = Field(..., description="Human-readable scenario name")
+    description: str = Field(..., description="Brief summary of what this scenario evaluates")
+    input_text: str = Field(..., description="Preset scenario text")
+    input_type: str = Field(default="text", description="Input type: sms, whatsapp, call_transcript, text")
+    expected_scam_type: str = Field(..., description="Expected scam category")
+    expected_risk_level: str = Field(..., description="Expected risk level: SAFE, VERIFY, HIGH_RISK")
+
 

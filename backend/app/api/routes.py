@@ -1,21 +1,28 @@
 """
 KavachX Bharat — API Routes
-Exposes message, call transcript, and audio analysis endpoints
-for the remote analysis pipeline.
+Exposes message, call transcript, audio analysis, scan history,
+incident reports, statistics, and demo scenario endpoints.
 """
 
-from typing import Optional
+from typing import List, Optional
 from fastapi import APIRouter, UploadFile, File, Form, HTTPException, status
 
 from app.models.schemas import (
     AnalyzeMessageRequest,
     AnalyzeTranscriptRequest,
+    ReportRequest,
     AudioAnalysisResponse,
     AnalysisResult,
+    ScanRecord,
+    ReportResponse,
+    DashboardStats,
+    DemoScenario,
     InputType,
 )
 from app.ai.engine import analyze_communication
 from app.services.stt_service import get_stt_service
+from app.services.scan_store import get_scan_store
+from app.services.demo_scenarios import get_demo_scenarios, get_demo_scenario_by_id
 from app.core.config import settings
 
 router = APIRouter()
@@ -37,7 +44,8 @@ router = APIRouter()
 async def analyze_message(request: AnalyzeMessageRequest) -> AnalysisResult:
     """
     Core remote message analysis endpoint.
-    Evaluates message content against deterministic risk signals and local AI.
+    Evaluates message content against deterministic risk signals and local AI,
+    persisting the result in the scan store.
     """
     result = await analyze_communication(
         text=request.message,
@@ -45,6 +53,11 @@ async def analyze_message(request: AnalyzeMessageRequest) -> AnalysisResult:
         language=request.language or "en"
     )
     result.input_type = request.input_type.value
+
+    # Persist in scan history
+    store = get_scan_store()
+    await store.save_scan(result)
+
     return result
 
 
@@ -64,7 +77,8 @@ async def analyze_message(request: AnalyzeMessageRequest) -> AnalysisResult:
 async def analyze_transcript(request: AnalyzeTranscriptRequest) -> AnalysisResult:
     """
     Call transcript analysis endpoint.
-    Passes transcript through shared analysis pipeline with input_type='call_transcript'.
+    Passes transcript through shared analysis pipeline with input_type='call_transcript',
+    persisting the result in the scan store.
     """
     result = await analyze_communication(
         text=request.transcript,
@@ -73,6 +87,11 @@ async def analyze_transcript(request: AnalyzeTranscriptRequest) -> AnalysisResul
     )
     result.input_type = InputType.CALL_TRANSCRIPT.value
     result.input_text = request.transcript
+
+    # Persist in scan history
+    store = get_scan_store()
+    await store.save_scan(result)
+
     return result
 
 
@@ -98,7 +117,8 @@ async def analyze_audio(
     1. Validate upload presence and enforce size limit.
     2. Transcribe via STT service abstraction.
     3. If demo mode or error, return transparent guidance without fabricating transcripts.
-    4. If transcribed, pass text through shared analysis engine with input_type='audio'.
+    4. If transcribed, pass text through shared analysis engine with input_type='audio',
+       and persist successful analysis into the scan store.
     """
     if not file or not file.filename:
         raise HTTPException(
@@ -158,6 +178,10 @@ async def analyze_audio(
     )
     analysis.input_type = InputType.AUDIO.value
 
+    # Persist in scan history
+    store = get_scan_store()
+    await store.save_scan(analysis)
+
     return AudioAnalysisResponse(
         status="success",
         message=None,
@@ -165,3 +189,131 @@ async def analyze_audio(
         transcript=transcript_text,
         analysis=analysis
     )
+
+
+# ── Scan History (B04) ──
+
+@router.get(
+    "/scans",
+    response_model=List[ScanRecord],
+    tags=["Scans"],
+    summary="List all scan summary records",
+    description="Retrieve scan history sorted newest first."
+)
+async def list_scans() -> List[ScanRecord]:
+    """Retrieve all stored scan summary records sorted by created_at descending."""
+    store = get_scan_store()
+    return await store.get_all_scans()
+
+
+@router.get(
+    "/scans/{scan_id}",
+    response_model=AnalysisResult,
+    tags=["Scans"],
+    summary="Get full analysis result by scan ID",
+    description="Retrieve the complete analysis result for a specific scan record."
+)
+async def get_scan(scan_id: str) -> AnalysisResult:
+    """Retrieve complete analysis details for a specific scan ID."""
+    store = get_scan_store()
+    scan = await store.get_scan(scan_id)
+    if not scan:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Scan record with ID '{scan_id}' not found."
+        )
+    return scan
+
+
+# ── Incident Reports (B04) ──
+
+@router.post(
+    "/reports",
+    response_model=ReportResponse,
+    tags=["Reports"],
+    summary="Submit an incident report for an existing scan",
+    description=(
+        "Record an incident report associated with a valid existing scan record. "
+        "Validates scan existence and stores report details in the backend."
+    )
+)
+async def create_report(report: ReportRequest) -> ReportResponse:
+    """Record an incident report linked to a valid existing scan."""
+    store = get_scan_store()
+
+    # Validate that the referenced scan exists
+    scan = await store.get_scan(report.scan_id)
+    if not scan:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Referenced scan_id '{report.scan_id}' does not exist."
+        )
+
+    return await store.save_report(report)
+
+
+# ── Dashboard Statistics (B04) ──
+
+@router.get(
+    "/stats",
+    response_model=DashboardStats,
+    tags=["Dashboard"],
+    summary="Get dashboard fraud statistics",
+    description=(
+        "Retrieve aggregated metrics derived from scan history: total scans, "
+        "threats detected, high-risk alerts, critical alerts, and protection status."
+    )
+)
+async def get_dashboard_stats() -> DashboardStats:
+    """Return aggregated fraud metrics derived from scan history."""
+    store = get_scan_store()
+    return store.get_stats()
+
+
+# ── Demo Scenarios (B04) ──
+
+@router.get(
+    "/demo/scenarios",
+    response_model=List[DemoScenario],
+    tags=["Demo"],
+    summary="List preset demo scenarios",
+    description="Retrieve preset evaluation scenarios demonstrating various scam types and legitimate communications."
+)
+async def list_demo_scenarios() -> List[DemoScenario]:
+    """Retrieve all available preset demo scenarios."""
+    return get_demo_scenarios()
+
+
+@router.post(
+    "/demo/run/{scenario_id}",
+    response_model=AnalysisResult,
+    tags=["Demo"],
+    summary="Execute a preset demo scenario",
+    description=(
+        "Run a preset scenario through the shared analysis engine, store the result in scan history, "
+        "and return the full analysis result."
+    )
+)
+async def run_demo_scenario(scenario_id: str) -> AnalysisResult:
+    """
+    Execute a preset demo scenario by ID.
+    Routes input through shared analysis engine and persists result.
+    """
+    scenario = get_demo_scenario_by_id(scenario_id)
+    if not scenario:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Demo scenario '{scenario_id}' not found."
+        )
+
+    result = await analyze_communication(
+        text=scenario.input_text,
+        input_type=scenario.input_type
+    )
+    result.input_type = scenario.input_type
+
+    # Persist in scan history
+    store = get_scan_store()
+    await store.save_scan(result)
+
+    return result

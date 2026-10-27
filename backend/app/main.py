@@ -47,7 +47,11 @@ app = FastAPI(
     lifespan=lifespan,
     openapi_tags=[
         {"name": "Health", "description": "Service health check and operational status"},
-        {"name": "Analysis", "description": "AI-powered scam detection and message analysis (B02)"},
+        {"name": "Analysis", "description": "AI-powered scam detection for messages, transcripts, and audio"},
+        {"name": "Scans", "description": "Scan history and single scan retrieval"},
+        {"name": "Reports", "description": "Incident report submission and recording"},
+        {"name": "Dashboard", "description": "Aggregated scam detection statistics"},
+        {"name": "Demo", "description": "Preset demo scenarios and evaluation runner"},
     ]
 )
 

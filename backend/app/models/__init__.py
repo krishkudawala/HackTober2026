@@ -10,10 +10,15 @@ from app.models.schemas import (
     ResponseLanguage,
     AnalyzeMessageRequest,
     AnalyzeTranscriptRequest,
+    ReportRequest,
     AudioAnalysisResponse,
     RedFlag,
     RiskScoreBreakdown,
     AnalysisResult,
+    ScanRecord,
+    ReportResponse,
+    DashboardStats,
+    DemoScenario,
 )
 
 __all__ = [
@@ -24,8 +29,13 @@ __all__ = [
     "ResponseLanguage",
     "AnalyzeMessageRequest",
     "AnalyzeTranscriptRequest",
+    "ReportRequest",
     "AudioAnalysisResponse",
     "RedFlag",
     "RiskScoreBreakdown",
     "AnalysisResult",
+    "ScanRecord",
+    "ReportResponse",
+    "DashboardStats",
+    "DemoScenario",
 ]
